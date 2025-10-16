@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Drive File Uploader</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; padding: 40px; text-align:center; }
+    .box { border:1px dashed #aaa; padding:20px; display:inline-block; border-radius:8px; }
+    #status { margin-top:16px; }
+  </style>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script async defer src="https://accounts.google.com/gsi/client"></script>
+</head>
+<body>
+  <h1>Drive File Uploader (client-side)</h1>
+
+  <div class="box">
+    <button id="authorize_button">Authorize Google</button>
+    <input id="file_input" type="file" style="display:none;margin-top:10px"/>
+    <div>
+      <button id="choose_button" style="display:none;margin-top:10px">Choose File</button>
+      <button id="upload_button" style="display:none;margin-top:10px">Upload</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+<script>
+/* ---------- CONFIG (replace CLIENT_ID) ---------- */
+const CLIENT_ID = "YOUR_CLIENT_ID_HERE";
+const SCOPES = "https://www.googleapis.com/auth/drive.file";
+/* ------------------------------------------------ */
+
+let tokenClient;
+let accessToken = null;
+let gapiInited = false;
+let gisInited = false;
+
+const authBtn = document.getElementById('authorize_button');
+const chooseBtn = document.getElementById('choose_button');
+const uploadBtn = document.getElementById('upload_button');
+const fileInput = document.getElementById('file_input');
+const status = document.getElementById('status');
+
+authBtn.addEventListener('click', handleAuthClick);
+chooseBtn.addEventListener('click', () => fileInput.click());
+uploadBtn.addEventListener('click', uploadFile);
+
+function gapiLoaded() {
+  gapi.load('client', initializeGapiClient);
+}
+
+async function initializeGapiClient() {
+  await gapi.client.init({
+    discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"]
+  });
+  gapiInited = true;
+}
+
+function gisLoaded() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: (resp) => {
+      if (resp.error) {
+        status.innerText = "Auth error: " + JSON.stringify(resp);
+        return;
+      }
+      accessToken = resp.access_token;
+      authBtn.style.display = 'none';
+      chooseBtn.style.display = 'inline-block';
+      uploadBtn.style.display = 'inline-block';
+      status.innerText = "Authorized. Choose a file to upload.";
+    },
+  });
+  gisInited = true;
+}
+
+function handleAuthClick() {
+  // Prompt for consent every time (useful for fresh token)
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+async function uploadFile() {
+  if (!accessToken) {
+    alert('Authorize first.');
+    return;
+  }
+  if (!fileInput.files.length) {
+    alert('Select a file first.');
+    return;
+  }
+
+  const file = fileInput.files[0];
+  status.innerText = 'Uploading...';
+
+  const metadata = {
+    name: file.name,
+    mimeType: file.type || 'application/octet-stream'
+  };
+
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('file', file);
+
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + accessToken },
+    body: form
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    status.innerText = 'Upload failed: ' + err;
+    return;
+  }
+  const data = await res.json();
+  const fileId = data.id;
+  const link = `https://drive.google.com/file/d/${fileId}/view`;
+  status.innerHTML = `✅ Uploaded! <a href="${link}" target="_blank">Open file</a><br>File ID: ${fileId}`;
+}
+
+// wire inits
+window.onload = () => {
+  gapiLoaded();
+  gisLoaded();
+};
+</script>
+</body>
+</html>
